@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PAL Labs Weather Service — PLWS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0c10;--surface:#111520;--border:#1e2535;
+  --cyan:#00d4ff;--cyan-dim:#00a8cc;--green:#00ff41;
+  --text:#e0e8f0;--muted:#6a7a95;
+  --font-head:'Rajdhani',sans-serif;--font-mono:'JetBrains Mono',monospace;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font-head);overflow:hidden;}
+body{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  position:relative;
+}
+
+/* subtle grid backdrop */
+body::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(0,212,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,.04) 1px,transparent 1px);
+  background-size:42px 42px;
+  mask-image:radial-gradient(ellipse 80% 60% at 50% 45%,#000 40%,transparent 100%);
+}
+
+#clock{
+  position:fixed;top:20px;right:24px;z-index:2;
+  font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:2px;
+}
+
+.brand{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:54px;z-index:1;}
+.logo-box{
+  width:64px;height:64px;background:var(--cyan);
+  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 30px rgba(0,212,255,.35);
+}
+.logo-box span{font-size:24px;font-weight:700;color:#000;letter-spacing:-1px;}
+.brand h1{font-size:30px;font-weight:700;letter-spacing:5px;text-transform:uppercase;color:var(--cyan);text-align:center;}
+.brand h1 small{display:block;font-size:11px;color:var(--muted);letter-spacing:5px;font-weight:500;margin-top:4px;}
+
+#menu{display:flex;gap:28px;z-index:1;}
+.menu-btn{
+  width:230px;padding:32px 22px 26px;
+  background:var(--surface);border:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;gap:14px;
+  cursor:pointer;text-decoration:none;color:var(--text);
+  transition:border-color .25s, transform .25s, box-shadow .25s;
+  position:relative;overflow:hidden;
+}
+.menu-btn::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:var(--accent);transform:scaleX(0);transform-origin:left;
+  transition:transform .25s;
+}
+.menu-btn:hover{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 12px 32px rgba(0,0,0,.4);}
+.menu-btn:hover::before{transform:scaleX(1);}
+
+.menu-btn .icon-wrap{
+  width:60px;height:60px;border:1px solid var(--accent);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--accent);transition:background .25s;
+}
+.menu-btn:hover .icon-wrap{background:rgba(255,255,255,.04);}
+
+.menu-btn .label{font-size:18px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--accent);}
+.menu-btn .desc{font-size:11px;color:var(--muted);letter-spacing:1px;text-align:center;line-height:1.5;}
+
+#radar-btn{--accent:var(--cyan);}
+#chaser-btn{--accent:var(--green);}
+
+footer{
+  position:fixed;bottom:18px;left:0;right:0;text-align:center;z-index:1;
+  font-size:10px;color:var(--muted);letter-spacing:2px;font-family:var(--font-mono);text-transform:uppercase;
+}
+
+@media (max-width:520px){
+  #menu{flex-direction:column;align-items:center;}
+  .menu-btn{width:260px;}
+}
+</style>
+</head>
+<body>
+
+<div id="clock">--:--:-- UTC</div>
+
+<div class="brand">
+  <div class="logo-box"><span>PL</span></div>
+  <h1>PLWS <small>PAL LABS WEATHER SERVICE</small></h1>
+</div>
+
+<div id="menu">
+  <a class="menu-btn" id="radar-btn" href="radar.html">
+    <div class="icon-wrap">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="9"/>
+        <circle cx="12" cy="12" r="5.2"/>
+        <circle cx="12" cy="12" r="1.4" fill="currentColor"/>
+        <path d="M12 12 L19.5 7.5"/>
+      </svg>
+    </div>
+    <div class="label">Radar</div>
+    <div class="desc">Live warnings, radar overlays &amp; weather data map</div>
+  </a>
+
+  <a class="menu-btn" id="chaser-btn" href="chaser.html">
+    <div class="icon-wrap">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M12 21s7-7.58 7-12A7 7 0 0 0 5 9c0 4.42 7 12 7 12z"/>
+        <circle cx="12" cy="9" r="2.4"/>
+      </svg>
+    </div>
+    <div class="label">Chaser</div>
+    <div class="desc">Join the storm chaser network &amp; live comms</div>
+  </a>
+</div>
+
+<footer>PAL Labs Weather Service · Operational Network</footer>
+
+<script>
+function tick(){
+  const n=new Date();
+  document.getElementById('clock').textContent=
+    String(n.getUTCHours()).padStart(2,'0')+':'+String(n.getUTCMinutes()).padStart(2,'0')+':'+String(n.getUTCSeconds()).padStart(2,'0')+' UTC';
+}
+setInterval(tick,1000);tick();
+</script>
+</body>
+</html>
