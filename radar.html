@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PAL Labs Weather Service — PLWS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0c10; --surface: #111520; --border: #1e2535;
+  --cyan: #00d4ff; --cyan-dim: #00a8cc;
+  --tornado: #ff6b00; --tstorm: #ffcc00; --flood: #4a9eff; --custom: #cc44ff;
+  --text: #e0e8f0; --muted: #6a7a95;
+  --font-head: 'Rajdhani', sans-serif; --font-mono: 'JetBrains Mono', monospace;
+}
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-head); }
+
+/* TOP BAR */
+#topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000; height: 48px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 16px; gap: 12px;
+}
+#topbar .brand { display: flex; align-items: center; gap: 10px; }
+#topbar .brand .logo-box {
+  width: 32px; height: 32px; background: var(--cyan);
+  display: flex; align-items: center; justify-content: center;
+  clip-path: polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+}
+#topbar .brand .logo-box span { font-size: 13px; font-weight: 700; color: #000; letter-spacing: -1px; }
+#topbar .brand h1 { font-size: 17px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--cyan); }
+#topbar .brand h1 small { display: block; font-size: 9px; color: var(--muted); letter-spacing: 3px; font-weight: 500; margin-top: -2px; }
+#topbar .bar-right { display: flex; align-items: center; gap: 10px; }
+#clock { font-family: var(--font-mono); font-size: 13px; color: var(--cyan); letter-spacing: 1px; }
+#admin-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  font-family: var(--font-head); font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  padding: 5px 12px; cursor: pointer; transition: all .2s;
+}
+#admin-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+#admin-btn.active { border-color: var(--tornado); color: var(--tornado); background: rgba(255,107,0,.08); }
+
+/* MAP */
+#map { position: fixed; top: 48px; left: 0; right: 0; bottom: 24px; z-index: 1; }
+
+/* SIDEBAR */
+#sidebar {
+  position: fixed; top: 48px; right: 0; width: 290px; bottom: 24px;
+  background: rgba(10,12,16,.95); border-left: 1px solid var(--border);
+  z-index: 500; display: flex; flex-direction: column; backdrop-filter: blur(6px);
+}
+/* TABS */
+#sidebar-tabs {
+  display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.stab {
+  flex: 1; padding: 9px 4px 7px; background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); font-family: var(--font-head); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; cursor: pointer; transition: all .15s;
+}
+.stab:hover { color: var(--text); }
+.stab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+.tab-pane { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.tab-pane.active { display: flex; }
+
+/* ALERTS TAB */
+#tab-alerts-header {
+  padding: 10px 14px 8px; border-bottom: 1px solid var(--border);
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+  display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+}
+#active-count { background: var(--cyan); color: #000; font-size: 10px; font-weight: 700; font-family: var(--font-mono); padding: 2px 6px; border-radius: 2px; }
+#alerts-list { flex: 1; overflow-y: auto; padding: 8px; }
+#alerts-list::-webkit-scrollbar { width: 4px; }
+#alerts-list::-webkit-scrollbar-thumb { background: var(--border); }
+.alert-card {
+  background: var(--surface); border: 1px solid var(--border); border-left-width: 3px; border-radius: 3px;
+  padding: 9px 10px; margin-bottom: 6px; cursor: pointer; transition: background .15s;
+}
+.alert-card:hover { background: #161c2a; }
+.alert-card.tornado { border-left-color: var(--tornado); }
+.alert-card.tstorm  { border-left-color: var(--tstorm); }
+.alert-card.flood   { border-left-color: var(--flood); }
+.alert-card.custom  { border-left-color: var(--custom); }
+.alert-card .type-tag { font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 3px; }
+.alert-card.tornado .type-tag { color: var(--tornado); }
+.alert-card.tstorm  .type-tag { color: var(--tstorm); }
+.alert-card.flood   .type-tag { color: var(--flood); }
+.alert-card.custom  .type-tag { color: var(--custom); }
+.alert-card .title  { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.alert-card .meta   { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
+.alert-card .del-btn { display: none; float: right; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; margin-left: 6px; }
+.alert-card:hover .del-btn { display: inline; }
+.alert-card .del-btn:hover { color: #ff4444; }
+#no-alerts { text-align: center; padding: 32px 16px; color: var(--muted); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+#no-alerts svg { display: block; margin: 0 auto 10px; opacity: .3; }
+
+/* RADAR LOOP TAB */
+#tab-radar { padding: 12px; gap: 10px; }
+.tab-section-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+#loop-product-pills { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.loop-pill {
+  padding: 4px 9px; border: 1px solid var(--border); border-radius: 2px;
+  font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+  cursor: pointer; transition: all .15s; background: transparent; color: var(--muted); font-family: var(--font-head);
+}
+.loop-pill:hover { border-color: var(--cyan-dim); color: var(--text); }
+.loop-pill.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,.08); }
+#loop-scrubber-wrap { margin-bottom: 8px; }
+#loop-scrubber { width: 100%; accent-color: var(--cyan); cursor: pointer; }
+#loop-time-display { font-family: var(--font-mono); font-size: 11px; color: var(--cyan); margin-bottom: 8px; text-align: center; }
+#loop-controls { display: flex; gap: 6px; margin-bottom: 10px; }
+.loop-btn {
+  flex: 1; padding: 7px; background: transparent; border: 1px solid var(--border);
+  color: var(--muted); font-family: var(--font-head); font-size: 12px; letter-spacing: 1px;
+  text-transform: uppercase; cursor: pointer; transition: all .2s;
+}
+.loop-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.loop-btn.playing { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,.08); }
+#loop-speed-row { display: flex; align-items: center; gap: 8px; }
+#loop-speed-row label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
+#loop-speed { flex: 1; accent-color: var(--cyan); cursor: pointer; }
+#loop-frame-count { font-size: 10px; color: var(--muted); font-family: var(--font-mono); margin-top: 6px; }
+
+/* STORM REPORTS TAB */
+#tab-storms { gap: 0; }
+#storm-controls { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#storm-hours-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+#storm-hours-row label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
+#storm-hours { flex: 1; accent-color: var(--cyan); cursor: pointer; }
+#storm-hours-val { font-family: var(--font-mono); font-size: 11px; color: var(--cyan); }
+#storm-load-btn {
+  width: 100%; padding: 7px; background: transparent; border: 1px solid var(--cyan);
+  color: var(--cyan); font-family: var(--font-head); font-size: 12px; font-weight: 600;
+  letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all .2s;
+}
+#storm-load-btn:hover { background: rgba(0,212,255,.1); }
+#storm-list { flex: 1; overflow-y: auto; padding: 8px; }
+#storm-list::-webkit-scrollbar { width: 4px; }
+#storm-list::-webkit-scrollbar-thumb { background: var(--border); }
+.storm-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+  padding: 7px 9px; margin-bottom: 5px; cursor: pointer; transition: background .15s;
+  border-left: 3px solid #ff6b00;
+}
+.storm-card:hover { background: #161c2a; }
+.storm-card .s-type { font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--tornado); margin-bottom: 2px; }
+.storm-card .s-loc  { font-size: 12px; font-weight: 600; }
+.storm-card .s-meta { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
+
+
+/* WEATHER DATA POPUP */
+#wx-popup {
+  position: fixed; bottom: 30px; left: 230px; z-index: 700;
+  width: 340px; background: var(--surface); border: 1px solid var(--border);
+  display: none;
+}
+#wx-popup.visible { display: block; }
+#wx-popup-header { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+#wx-popup-header span { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+#wx-popup-close { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 0 4px; }
+#wx-popup-close:hover { color: var(--text); }
+#wx-popup-body { padding: 10px 12px; }
+#wx-coords { font-family: var(--font-mono); font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+#wx-current { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.wx-stat { background: var(--bg); border: 1px solid var(--border); padding: 6px 10px; border-radius: 2px; }
+.wx-stat .val { font-family: var(--font-mono); font-size: 16px; font-weight: 500; color: var(--cyan); }
+.wx-stat .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+#wx-chart-wrap { height: 110px; }
+#wx-loading { font-size: 11px; color: var(--muted); text-align: center; padding: 20px; font-family: var(--font-mono); }
+
+/* LAYER TOGGLE */
+#layer-toggle { position: fixed; top: 60px; left: 10px; z-index: 600; display: flex; flex-direction: column; gap: 4px; }
+.layer-btn {
+  background: rgba(17,21,32,.9); border: 1px solid var(--border); color: var(--muted);
+  font-family: var(--font-head); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+  padding: 5px 10px; cursor: pointer; transition: all .2s; backdrop-filter: blur(4px);
+}
+.layer-btn:hover { border-color: var(--cyan-dim); color: var(--text); }
+.layer-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,.08); }
+
+/* RADAR PANEL */
+#radar-panel {
+  position: fixed; bottom: 28px; left: 10px; z-index: 600;
+  background: rgba(17,21,32,.92); border: 1px solid var(--border);
+  backdrop-filter: blur(6px); width: 210px;
+}
+#radar-header { padding: 7px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+#radar-header span { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+#radar-toggle-btn {
+  background: none; border: 1px solid var(--cyan); color: var(--cyan);
+  font-family: var(--font-mono); font-size: 10px; padding: 2px 8px; cursor: pointer; transition: all .2s; letter-spacing: 1px;
+}
+#radar-toggle-btn:hover { background: rgba(0,212,255,.12); }
+#radar-toggle-btn.off { border-color: var(--border); color: var(--muted); }
+#radar-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.radar-product-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  font-family: var(--font-head); font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+  padding: 5px 8px; cursor: pointer; transition: all .15s; text-align: left;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.radar-product-btn:hover { border-color: var(--cyan-dim); color: var(--text); }
+.radar-product-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,.08); }
+.radar-product-btn .tag { font-size: 9px; color: var(--muted); font-family: var(--font-mono); }
+.radar-product-btn.active .tag { color: var(--cyan-dim); }
+#radar-opacity-row { display: flex; align-items: center; gap: 8px; padding-top: 4px; border-top: 1px solid var(--border); margin-top: 2px; }
+#radar-opacity-row label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
+#radar-opacity { flex: 1; accent-color: var(--cyan); cursor: pointer; }
+#radar-last-update { font-size: 9px; font-family: var(--font-mono); color: var(--muted); padding: 4px 10px 6px; border-top: 1px solid var(--border); }
+
+/* ADMIN PANEL */
+#admin-panel {
+  position: fixed; top: 48px; left: 0; width: 260px; bottom: 0;
+  background: rgba(10,12,16,.95); border-right: 1px solid var(--border);
+  z-index: 600; display: none; flex-direction: column; backdrop-filter: blur(8px);
+}
+#admin-panel.visible { display: flex; }
+#admin-panel-header {
+  padding: 12px 14px 10px; border-bottom: 1px solid var(--border);
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--tornado);
+  display: flex; align-items: center; gap: 8px;
+}
+#admin-panel-header .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--tornado);
+  box-shadow: 0 0 6px var(--tornado); animation: blink 1.2s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.admin-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.admin-section label { display: block; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.admin-section input, .admin-section select, .admin-section textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); font-family: var(--font-head); font-size: 13px;
+  padding: 7px 9px; outline: none; border-radius: 2px; transition: border-color .2s;
+}
+.admin-section input:focus, .admin-section select:focus, .admin-section textarea:focus { border-color: var(--cyan); }
+.admin-section select option { background: #111; }
+.admin-section textarea { resize: vertical; min-height: 60px; font-size: 12px; }
+.type-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.type-pill {
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: 2px;
+  font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+  cursor: pointer; transition: all .15s; background: transparent; color: var(--muted); font-family: var(--font-head);
+}
+.type-pill[data-type="tornado"]:hover, .type-pill[data-type="tornado"].selected { border-color: var(--tornado); color: var(--tornado); background: rgba(255,107,0,.1); }
+.type-pill[data-type="tstorm"]:hover,  .type-pill[data-type="tstorm"].selected  { border-color: var(--tstorm);  color: var(--tstorm);  background: rgba(255,204,0,.1); }
+.type-pill[data-type="flood"]:hover,   .type-pill[data-type="flood"].selected   { border-color: var(--flood);   color: var(--flood);   background: rgba(74,158,255,.1); }
+.type-pill[data-type="custom"]:hover,  .type-pill[data-type="custom"].selected  { border-color: var(--custom);  color: var(--custom);  background: rgba(204,68,255,.1); }
+.draw-btn {
+  width: 100%; padding: 9px; margin-top: 8px; background: transparent; border: 1px solid var(--cyan);
+  color: var(--cyan); font-family: var(--font-head); font-size: 13px; font-weight: 600;
+  letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all .2s;
+}
+.draw-btn:hover { background: rgba(0,212,255,.1); }
+.draw-btn.drawing { background: rgba(255,107,0,.1); border-color: var(--tornado); color: var(--tornado); }
+#draw-hint { font-size: 10px; color: var(--muted); margin-top: 6px; text-align: center; letter-spacing: .5px; display: none; }
+#draw-hint.visible { display: block; }
+#finish-btn {
+  width: 100%; padding: 9px; margin-top: 5px; background: rgba(0,212,255,.12);
+  border: 1px solid var(--cyan); color: var(--cyan); font-family: var(--font-head);
+  font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; display: none; transition: all .2s;
+}
+#finish-btn:hover { background: rgba(0,212,255,.2); }
+#finish-btn.visible { display: block; }
+#cancel-btn {
+  width: 100%; padding: 7px; margin-top: 4px; background: transparent;
+  border: 1px solid var(--border); color: var(--muted); font-family: var(--font-head);
+  font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; cursor: pointer; display: none; transition: all .2s;
+}
+#cancel-btn:hover { border-color: #ff4444; color: #ff4444; }
+#cancel-btn.visible { display: block; }
+
+/* AUTH MODAL */
+#auth-overlay {
+  position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.7);
+  backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center;
+}
+#auth-box { background: var(--surface); border: 1px solid var(--border); padding: 28px 32px; width: 320px; border-radius: 3px; }
+#auth-box h2 { font-size: 18px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
+#auth-box p  { font-size: 11px; color: var(--muted); letter-spacing: 1px; margin-bottom: 18px; }
+#auth-pw {
+  width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-mono); font-size: 14px; padding: 9px 11px; outline: none;
+  margin-bottom: 10px; border-radius: 2px; transition: border-color .2s;
+}
+#auth-pw:focus { border-color: var(--cyan); }
+#auth-submit {
+  width: 100%; padding: 9px; background: var(--cyan); border: none; color: #000;
+  font-family: var(--font-head); font-size: 14px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: background .2s;
+}
+#auth-submit:hover { background: var(--cyan-dim); }
+#auth-error { font-size: 11px; color: #ff4444; margin-top: 7px; display: none; }
+#auth-cancel { background: none; border: none; color: var(--muted); font-size: 11px; cursor: pointer; margin-top: 8px; width: 100%; text-align: center; letter-spacing: 1px; }
+#auth-cancel:hover { color: var(--text); }
+
+/* LEAFLET POPUP */
+.leaflet-popup-content-wrapper { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: 3px !important; box-shadow: 0 4px 20px rgba(0,0,0,.5) !important; color: var(--text) !important; font-family: var(--font-head) !important; }
+.leaflet-popup-tip { background: var(--surface) !important; }
+.popup-type { font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 3px; }
+.popup-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.popup-desc { font-size: 12px; color: #8899aa; margin-bottom: 6px; }
+.popup-meta { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+
+/* MISC */
+.drawing-mode { cursor: crosshair !important; }
+#statusbar {
+  position: fixed; bottom: 0; left: 0; right: 290px; height: 24px;
+  background: var(--surface); border-top: 1px solid var(--border);
+  z-index: 500; display: flex; align-items: center; gap: 16px; padding: 0 12px;
+}
+.status-item { font-size: 10px; font-family: var(--font-mono); color: var(--muted); }
+.status-item span { color: var(--cyan); }
+#coords-display { margin-left: auto; }
+#wx-hint {
+  position: fixed; bottom: 28px; left: 230px; z-index: 600;
+  background: rgba(17,21,32,.9); border: 1px solid var(--border);
+  font-size: 10px; color: var(--muted); padding: 5px 10px; letter-spacing: 1px;
+  font-family: var(--font-mono); pointer-events: none;
+  display: none;
+}
+
+/* LOCATION DOT */
+#loc-dot-wrap {
+  position: fixed; z-index: 800; pointer-events: none;
+  transform: translate(-50%, -50%);
+  display: none;
+}
+.loc-pulse {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(0,212,255,.25);
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  animation: locpulse 2s ease-out infinite;
+}
+@keyframes locpulse { 0%{width:18px;height:18px;opacity:.7} 100%{width:48px;height:48px;opacity:0} }
+.loc-center {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--cyan); border: 2px solid #fff;
+  box-shadow: 0 0 8px var(--cyan);
+  position: relative; z-index: 1;
+}
+
+/* WARNING BANNER */
+#warn-banner {
+  position: fixed; top: 48px; left: 0; right: 290px; z-index: 900;
+  display: none; align-items: center; gap: 12px; padding: 0 16px;
+  height: 38px;
+  border-bottom: 1px solid;
+  animation: warnflash 1s infinite;
+}
+#warn-banner.tornado  { background: rgba(255,107,0,.18); border-color: var(--tornado); }
+#warn-banner.tstorm   { background: rgba(255,204,0,.15); border-color: var(--tstorm); }
+#warn-banner.flood    { background: rgba(74,158,255,.15); border-color: var(--flood); }
+#warn-banner.custom   { background: rgba(204,68,255,.15); border-color: var(--custom); }
+@keyframes warnflash { 0%,100%{opacity:1} 50%{opacity:.7} }
+#warn-banner .warn-icon { font-size: 18px; }
+#warn-banner .warn-text { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; flex: 1; }
+#warn-banner.tornado  .warn-text { color: var(--tornado); }
+#warn-banner.tstorm   .warn-text { color: var(--tstorm); }
+#warn-banner.flood    .warn-text { color: var(--flood); }
+#warn-banner.custom   .warn-text { color: var(--custom); }
+#warn-banner .warn-close { background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 4px; pointer-events: all; }
+#warn-banner .warn-close:hover { color: var(--text); }
+
+/* GPS STATUS in statusbar */
+#gps-status { display: flex; align-items: center; gap: 5px; }
+#gps-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+#gps-dot.active { background: #44ff88; box-shadow: 0 0 5px #44ff88; }
+#gps-dot.warn   { background: var(--tornado); box-shadow: 0 0 5px var(--tornado); animation: blink 0.6s infinite; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="brand">
+    <div class="logo-box"><span>PL</span></div>
+    <h1>PAL Labs Weather Service <small>PLWS · OPERATIONAL</small></h1>
+  </div>
+  <div class="bar-right">
+    <div id="clock">--:--:-- UTC</div>
+    <button id="admin-btn" onclick="toggleAdmin()">Admin</button>
+  </div>
+</div>
+
+<!-- LAYER TOGGLES -->
+<div id="layer-toggle">
+  <button class="layer-btn active" id="btn-dark"  onclick="setLayer('dark')">Dark</button>
+  <button class="layer-btn"        id="btn-sat"   onclick="setLayer('sat')">Satellite</button>
+  <button class="layer-btn"        id="btn-clean" onclick="setLayer('clean')">Minimal</button>
+</div>
+
+<!-- RADAR PANEL -->
+<div id="radar-panel">
+  <div id="radar-header">
+    <span>Radar</span>
+    <button id="radar-toggle-btn" onclick="toggleRadar()">ON</button>
+  </div>
+  <div id="radar-body">
+    <button class="radar-product-btn active" data-product="N0Q" onclick="setRadarProduct(this)">Base Reflectivity <span class="tag">N0Q</span></button>
+    <button class="radar-product-btn"        data-product="N0C" onclick="setRadarProduct(this)">Composite Reflect. <span class="tag">N0C</span></button>
+    <button class="radar-product-btn"        data-product="N0U" onclick="setRadarProduct(this)">Base Velocity <span class="tag">N0U</span></button>
+    <div id="radar-opacity-row">
+      <label>Opacity</label>
+      <input type="range" id="radar-opacity" min="10" max="100" value="80" oninput="setRadarOpacity(this.value)">
+    </div>
+  </div>
+  <div id="radar-last-update">Last update: —</div>
+</div>
+
+<!-- WX POPUP -->
+<div id="wx-popup">
+  <div id="wx-popup-header">
+    <span>Weather Data</span>
+    <button id="wx-popup-close" onclick="closeWxPopup()">✕</button>
+  </div>
+  <div id="wx-popup-body">
+    <div id="wx-loading">Loading...</div>
+    <div id="wx-coords"></div>
+    <div id="wx-current" style="display:none"></div>
+    <div id="wx-chart-wrap" style="display:none"><canvas id="wx-chart"></canvas></div>
+  </div>
+</div>
+<div id="wx-hint">Click map to get weather data</div>
+
+<!-- WARNING BANNER -->
+<div id="warn-banner">
+  <span class="warn-icon">⚠</span>
+  <span class="warn-text" id="warn-text">Warning</span>
+  <button class="warn-close" onclick="dismissWarning()">✕</button>
+</div>
+
+<!-- LOCATION DOT (positioned by JS) -->
+<div id="loc-dot-wrap">
+  <div class="loc-pulse"></div>
+  <div class="loc-center"></div>
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div id="sidebar-tabs">
+    <button class="stab active" onclick="switchTab('alerts',this)">Alerts</button>
+    <button class="stab"        onclick="switchTab('radar',this)">Loop</button>
+    <button class="stab"        onclick="switchTab('storms',this)">Reports</button>
+  </div>
+
+  <!-- ALERTS TAB -->
+  <div class="tab-pane active" id="tab-alerts">
+    <div id="tab-alerts-header">
+      Active Warnings &amp; Alerts
+      <span id="active-count">0</span>
+    </div>
+    <div id="alerts-list">
+      <div id="no-alerts">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        No active alerts
+      </div>
+    </div>
+  </div>
+
+  <!-- RADAR LOOP TAB -->
+  <div class="tab-pane" id="tab-radar">
+    <div class="tab-section-label">Product</div>
+    <div id="loop-product-pills">
+      <button class="loop-pill active" data-lp="N0Q" onclick="setLoopProduct(this)">Base Refl.</button>
+      <button class="loop-pill"        data-lp="N0C" onclick="setLoopProduct(this)">Composite</button>
+      <button class="loop-pill"        data-lp="N0U" onclick="setLoopProduct(this)">Velocity</button>
+    </div>
+    <div class="tab-section-label">Playback</div>
+    <div id="loop-scrubber-wrap">
+      <input type="range" id="loop-scrubber" min="0" max="11" value="11" oninput="scrubLoop(this.value)">
+    </div>
+    <div id="loop-time-display">—</div>
+    <div id="loop-controls">
+      <button class="loop-btn" id="loop-play-btn" onclick="toggleLoopPlay()">▶ Play</button>
+      <button class="loop-btn" onclick="stepLoop(-1)">◀ Step</button>
+      <button class="loop-btn" onclick="stepLoop(1)">Step ▶</button>
+    </div>
+    <div id="loop-speed-row">
+      <label>Speed</label>
+      <input type="range" id="loop-speed" min="200" max="1200" value="600" step="100">
+    </div>
+    <div id="loop-frame-count">12 frames · ~1hr history</div>
+  </div>
+
+  <!-- STORM REPORTS TAB -->
+  <div class="tab-pane" id="tab-storms">
+    <div id="storm-controls">
+      <div id="storm-hours-row">
+        <label>Hours back</label>
+        <input type="range" id="storm-hours" min="1" max="24" value="6" oninput="document.getElementById('storm-hours-val').textContent=this.value+'h'">
+        <span id="storm-hours-val">6h</span>
+      </div>
+      <button id="storm-load-btn" onclick="loadStormReports()">Load Reports</button>
+    </div>
+    <div id="storm-list"><div style="text-align:center;padding:24px;color:var(--muted);font-size:11px;letter-spacing:1px;text-transform:uppercase;">Press Load Reports</div></div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="admin-panel">
+  <div id="admin-panel-header"><div class="dot"></div>Admin — Polygon Editor</div>
+  <div class="admin-section">
+    <label>Warning Type</label>
+    <div class="type-pills">
+      <button class="type-pill selected" data-type="tornado" onclick="selectType(this)">Tornado</button>
+      <button class="type-pill" data-type="tstorm"  onclick="selectType(this)">T-Storm</button>
+      <button class="type-pill" data-type="flood"   onclick="selectType(this)">Flood</button>
+      <button class="type-pill" data-type="custom"  onclick="selectType(this)">Custom</button>
+    </div>
+  </div>
+  <div class="admin-section">
+    <label>Alert Title</label>
+    <input type="text" id="alert-title" placeholder="e.g. Tornado Warning" maxlength="60">
+  </div>
+  <div class="admin-section">
+    <label>Description (optional)</label>
+    <textarea id="alert-desc" placeholder="Details, affected areas, times..."></textarea>
+  </div>
+  <div class="admin-section">
+    <button class="draw-btn" id="draw-btn" onclick="startDrawing()">▶ Draw Polygon</button>
+    <div id="draw-hint">Click map to place vertices. Right-click to undo last point.</div>
+    <button id="finish-btn" onclick="finishPolygon()">✓ Finish Polygon</button>
+    <button id="cancel-btn" onclick="cancelDrawing()">✕ Cancel</button>
+  </div>
+</div>
+
+<!-- AUTH MODAL -->
+<div id="auth-overlay" style="display:none;">
+  <div id="auth-box">
+    <h2>Admin Access</h2>
+    <p>PLWS Operational Staff Only</p>
+    <input type="password" id="auth-pw" placeholder="Password" onkeydown="if(event.key==='Enter')doAuth()">
+    <button id="auth-submit" onclick="doAuth()">Authenticate</button>
+    <div id="auth-error">Incorrect password.</div>
+    <button id="auth-cancel" onclick="closeAuth()">Cancel</button>
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div id="statusbar">
+  <div class="status-item">PLWS <span>v2.0</span></div>
+  <div class="status-item">Polygons: <span id="poly-count">0</span></div>
+  <div class="status-item" id="gps-status">
+    <div id="gps-dot"></div>
+    <span id="gps-label" style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">GPS Off</span>
+    <button onclick="toggleGPS()" style="background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--font-mono);font-size:9px;padding:1px 6px;cursor:pointer;letter-spacing:1px;margin-left:4px;" id="gps-btn">Track</button>
+  </div>
+  <div class="status-item" id="coords-display">Lat: <span id="lat-display">--</span> Lon: <span id="lon-display">--</span></div>
+</div>
+
+<script>
+// ══ CONFIG ══
+const ADMIN_PASS = 'TeamPalLabs';
+const SB_URL     = 'https://gkpdnqrvddgpfyderrif.supabase.co/rest/v1';
+const SB_KEY     = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdrcGRucXJ2ZGRncGZ5ZGVycmlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NTU4OTgsImV4cCI6MjA5NjQzMTg5OH0.-uZRFaySmcqWo4MC9zqj4iuG121cxKWZ5VqluTUXfFU';
+const SB_HDR     = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+
+// ══ STATE ══
+let isAdmin = false, drawingMode = false, currentType = 'tornado';
+let drawPoints = [], tempMarkers = [], tempPolyline = null, tempPoly = null;
+let alerts = [], alertLayers = {};
+const TYPE_COLORS = { tornado:'#ff6b00', tstorm:'#ffcc00', flood:'#4a9eff', custom:'#cc44ff' };
+const TYPE_LABELS = { tornado:'Tornado Warning', tstorm:'Severe Thunderstorm Warning', flood:'Flood Zone', custom:'Special Weather Statement' };
+
+// ══ MAP ══
+const map = L.map('map', { zoomControl: false, center: [38.5,-96], zoom: 5 });
+L.control.zoom({ position: 'bottomleft' }).addTo(map);
+const layers = {
+  dark:  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',  { attribution:'©OpenStreetMap ©CARTO', subdomains:'abcd', maxZoom:19 }),
+  sat:   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution:'©Esri', maxZoom:19 }),
+  clean: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution:'©OpenStreetMap ©CARTO', subdomains:'abcd', maxZoom:19 })
+};
+layers.dark.addTo(map);
+let activeLayerKey = 'dark';
+function setLayer(k) {
+  map.removeLayer(layers[activeLayerKey]); layers[k].addTo(map); activeLayerKey = k;
+  document.querySelectorAll('.layer-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-'+k).classList.add('active');
+}
+
+// ══ CLOCK ══
+function updateClock() {
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    String(n.getUTCHours()).padStart(2,'0')+':'+String(n.getUTCMinutes()).padStart(2,'0')+':'+String(n.getUTCSeconds()).padStart(2,'0')+' UTC';
+}
+setInterval(updateClock,1000); updateClock();
+
+// ══ COORDS ══
+map.on('mousemove', e => {
+  document.getElementById('lat-display').textContent = e.latlng.lat.toFixed(4);
+  document.getElementById('lon-display').textContent = e.latlng.lng.toFixed(4);
+});
+
+// ══ TABS ══
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.stab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ══ SUPABASE ══
+async function sbFetch(path, opts={}) {
+  const r = await fetch(SB_URL+path, { headers: SB_HDR, ...opts });
+  if (!r.ok) throw new Error(await r.text());
+  return r.status===204 ? null : r.json();
+}
+
+// ══ LIVE POLYGONS ══
+async function loadPolygons() {
+  try {
+    const rows = await sbFetch('/plws_polygons?order=created_at.asc');
+    rows.forEach(row => renderPolygon(row));
+    updateCount();
+  } catch(e) { console.error('Load polygons failed:', e); }
+}
+function renderPolygon(row) {
+  const color = TYPE_COLORS[row.type]||'#fff';
+  const timeStr = new Date(row.created_at).toUTCString().replace(' GMT','')+' UTC';
+  const poly = L.polygon(row.points, { color, fillColor:color, fillOpacity:0.2, weight:2 }).addTo(map);
+  poly.bindPopup(`<div class="popup-type" style="color:${color}">${TYPE_LABELS[row.type]||row.type}</div><div class="popup-title">${escHtml(row.title)}</div>${row.description?`<div class="popup-desc">${escHtml(row.description)}</div>`:''}<div class="popup-meta">${timeStr}</div>`);
+  const alert = { id:row.id, type:row.type, title:row.title, desc:row.description||'', time:timeStr, points:row.points };
+  alerts.push(alert); alertLayers[row.id] = poly;
+  addAlertCard(alert);
+}
+
+// ══ AUTH ══
+function toggleAdmin() { if(isAdmin){deactivateAdmin();return;} document.getElementById('auth-overlay').style.display='flex'; setTimeout(()=>document.getElementById('auth-pw').focus(),50); }
+function doAuth() {
+  if(document.getElementById('auth-pw').value===ADMIN_PASS) {
+    isAdmin=true; document.getElementById('auth-overlay').style.display='none';
+    document.getElementById('auth-pw').value=''; document.getElementById('auth-error').style.display='none';
+    document.getElementById('admin-panel').classList.add('visible');
+    document.getElementById('admin-btn').classList.add('active');
+    document.getElementById('admin-btn').textContent='Exit Admin';
+  } else { document.getElementById('auth-error').style.display='block'; document.getElementById('auth-pw').value=''; document.getElementById('auth-pw').focus(); }
+}
+function closeAuth() { document.getElementById('auth-overlay').style.display='none'; document.getElementById('auth-pw').value=''; document.getElementById('auth-error').style.display='none'; }
+function deactivateAdmin() {
+  isAdmin=false; cancelDrawing();
+  document.getElementById('admin-panel').classList.remove('visible');
+  document.getElementById('admin-btn').classList.remove('active');
+  document.getElementById('admin-btn').textContent='Admin';
+}
+
+// ══ TYPE SELECT ══
+function selectType(el) { document.querySelectorAll('.type-pill').forEach(p=>p.classList.remove('selected')); el.classList.add('selected'); currentType=el.dataset.type; }
+
+// ══ DRAWING ══
+function startDrawing() {
+  if(!isAdmin||drawingMode) return; drawingMode=true; drawPoints=[];
+  document.getElementById('draw-btn').classList.add('drawing'); document.getElementById('draw-btn').textContent='⬛ Drawing...';
+  document.getElementById('draw-hint').classList.add('visible'); document.getElementById('finish-btn').classList.add('visible'); document.getElementById('cancel-btn').classList.add('visible');
+  document.getElementById('map').classList.add('drawing-mode'); map.dragging.disable();
+}
+function cancelDrawing() {
+  drawingMode=false; drawPoints=[]; clearTempLayers();
+  document.getElementById('draw-btn').classList.remove('drawing'); document.getElementById('draw-btn').textContent='▶ Draw Polygon';
+  document.getElementById('draw-hint').classList.remove('visible'); document.getElementById('finish-btn').classList.remove('visible'); document.getElementById('cancel-btn').classList.remove('visible');
+  document.getElementById('map').classList.remove('drawing-mode'); map.dragging.enable();
+}
+function clearTempLayers() {
+  tempMarkers.forEach(m=>map.removeLayer(m)); tempMarkers=[];
+  if(tempPolyline){map.removeLayer(tempPolyline);tempPolyline=null;}
+  if(tempPoly){map.removeLayer(tempPoly);tempPoly=null;}
+}
+function updateTempDraw() {
+  if(tempPolyline)map.removeLayer(tempPolyline); if(tempPoly)map.removeLayer(tempPoly);
+  if(drawPoints.length<2)return;
+  const c=TYPE_COLORS[currentType];
+  if(drawPoints.length>=3) tempPoly=L.polygon(drawPoints,{color:c,fillColor:c,fillOpacity:.18,weight:2,dashArray:'5,4'}).addTo(map);
+  tempPolyline=L.polyline(drawPoints,{color:c,weight:2,dashArray:'5,4'}).addTo(map);
+}
+map.on('click', e => {
+  if(!drawingMode)return;
+  drawPoints.push([e.latlng.lat,e.latlng.lng]);
+  tempMarkers.push(L.circleMarker([e.latlng.lat,e.latlng.lng],{radius:5,color:TYPE_COLORS[currentType],fillColor:'#fff',fillOpacity:1,weight:2}).addTo(map));
+  updateTempDraw();
+});
+map.on('contextmenu', e => { if(!drawingMode||!drawPoints.length)return; drawPoints.pop(); if(tempMarkers.length){map.removeLayer(tempMarkers.pop());} updateTempDraw(); });
+
+async function finishPolygon() {
+  if(drawPoints.length<3){alert('Place at least 3 points.');return;}
+  const title=document.getElementById('alert-title').value.trim()||TYPE_LABELS[currentType];
+  const desc=document.getElementById('alert-desc').value.trim();
+  const btn=document.getElementById('finish-btn'); btn.textContent='Saving...'; btn.disabled=true;
+  try {
+    const rows=await sbFetch('/plws_polygons',{method:'POST',body:JSON.stringify({type:currentType,title,description:desc||null,points:drawPoints})});
+    renderPolygon(rows[0]); updateCount(); cancelDrawing();
+    document.getElementById('alert-title').value=''; document.getElementById('alert-desc').value='';
+  } catch(e){alert('Save failed: '+e.message);}
+  finally{btn.textContent='✓ Finish Polygon';btn.disabled=false;}
+}
+
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ══ SIDEBAR ALERTS ══
+function addAlertCard(alert) {
+  document.getElementById('no-alerts').style.display='none';
+  const card=document.createElement('div');
+  card.className=`alert-card ${alert.type}`; card.id=`card-${alert.id}`;
+  card.innerHTML=`<button class="del-btn" onclick="deleteAlert(${alert.id},event)" title="Delete">✕</button><div class="type-tag">${TYPE_LABELS[alert.type]||alert.type}</div><div class="title">${escHtml(alert.title)}</div><div class="meta">${alert.time}</div>`;
+  card.addEventListener('click',()=>{ const l=alertLayers[alert.id]; if(l){map.fitBounds(l.getBounds(),{padding:[40,40]});l.openPopup();} });
+  document.getElementById('alerts-list').prepend(card);
+}
+async function deleteAlert(id,e) {
+  e.stopPropagation(); if(!isAdmin)return; if(!confirm('Delete this polygon?'))return;
+  try {
+    await sbFetch(`/plws_polygons?id=eq.${id}`,{method:'DELETE'});
+    if(alertLayers[id]){map.removeLayer(alertLayers[id]);delete alertLayers[id];}
+    alerts=alerts.filter(a=>a.id!==id);
+    const c=document.getElementById(`card-${id}`); if(c)c.remove();
+    if(!alerts.length)document.getElementById('no-alerts').style.display='';
+    updateCount();
+  } catch(err){alert('Delete failed: '+err.message);}
+}
+function updateCount() {
+  document.getElementById('active-count').textContent=alerts.length;
+  document.getElementById('poly-count').textContent=alerts.length;
+}
+
+// ══ LIVE RADAR ══
+const RADAR_PRODUCTS = {
+  N0Q:{label:'Base Reflectivity',   url:'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-0/{z}/{x}/{y}.png'},
+  N0C:{label:'Composite Reflectivity',url:'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0C-0/{z}/{x}/{y}.png'},
+  N0U:{label:'Base Velocity',        url:'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0U-0/{z}/{x}/{y}.png'},
+};
+let radarLayer=null, radarOn=true, currentProduct='N0Q', radarOpacity=0.80;
+function buildRadarLayer(p){return L.tileLayer(RADAR_PRODUCTS[p].url,{opacity:radarOpacity,zIndex:200,tileSize:256,attribution:'Radar: IEM RIDGE'});}
+function setRadarProduct(btn){
+  document.querySelectorAll('.radar-product-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+  currentProduct=btn.dataset.product; if(radarLayer){map.removeLayer(radarLayer);radarLayer=null;}
+  if(radarOn){radarLayer=buildRadarLayer(currentProduct);radarLayer.addTo(map);} updateRadarTimestamp();
+}
+function toggleRadar(){
+  radarOn=!radarOn; const btn=document.getElementById('radar-toggle-btn');
+  if(radarOn){btn.textContent='ON';btn.classList.remove('off');radarLayer=buildRadarLayer(currentProduct);radarLayer.addTo(map);}
+  else{btn.textContent='OFF';btn.classList.add('off');if(radarLayer){map.removeLayer(radarLayer);radarLayer=null;}}
+}
+function setRadarOpacity(v){radarOpacity=v/100;if(radarLayer)radarLayer.setOpacity(radarOpacity);}
+function updateRadarTimestamp(){
+  const n=new Date(); n.setMinutes(Math.floor(n.getMinutes()/5)*5,0,0);
+  document.getElementById('radar-last-update').textContent=`${RADAR_PRODUCTS[currentProduct].label} · ~${String(n.getUTCHours()).padStart(2,'0')}:${String(n.getUTCMinutes()).padStart(2,'0')}Z`;
+}
+function refreshRadar(){if(!radarOn||!radarLayer)return;map.removeLayer(radarLayer);radarLayer=buildRadarLayer(currentProduct);radarLayer.addTo(map);updateRadarTimestamp();}
+radarLayer=buildRadarLayer(currentProduct); radarLayer.addTo(map); updateRadarTimestamp();
+setInterval(refreshRadar,5*60*1000);
+
+// ══ RADAR LOOP ══
+let loopProduct='N0Q', loopFrame=11, loopPlaying=false, loopTimer=null, loopLayer=null;
+const LOOP_FRAMES=12;
+// IEM RIDGE archive URL pattern
+function loopTileUrl(product, minsBack) {
+  // IEM archive tiles: use the time-offset version
+  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-${product}-${minsBack}/{z}/{x}/{y}.png`;
+}
+function getLoopTimeLabel(frameIdx) {
+  // frameIdx 0=oldest (~55min ago), 11=newest
+  const minsAgo=(LOOP_FRAMES-1-frameIdx)*5;
+  const d=new Date(Date.now()-minsAgo*60000);
+  return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+'Z  ('+minsAgo+' min ago)';
+}
+function renderLoopFrame(idx) {
+  if(loopLayer){map.removeLayer(loopLayer);loopLayer=null;}
+  const minsBack=(LOOP_FRAMES-1-idx)*5;
+  loopLayer=L.tileLayer(loopTileUrl(loopProduct,minsBack),{opacity:0.75,zIndex:201,tileSize:256});
+  loopLayer.addTo(map);
+  document.getElementById('loop-time-display').textContent=getLoopTimeLabel(idx);
+  document.getElementById('loop-scrubber').value=idx;
+}
+function scrubLoop(v){loopFrame=parseInt(v);renderLoopFrame(loopFrame);}
+function stepLoop(d){loopFrame=Math.max(0,Math.min(LOOP_FRAMES-1,loopFrame+d));renderLoopFrame(loopFrame);}
+function toggleLoopPlay(){
+  loopPlaying=!loopPlaying;
+  const btn=document.getElementById('loop-play-btn');
+  if(loopPlaying){btn.textContent='⏸ Pause';btn.classList.add('playing');playLoopTick();}
+  else{btn.textContent='▶ Play';btn.classList.remove('playing');if(loopTimer){clearTimeout(loopTimer);loopTimer=null;}}
+}
+function playLoopTick(){
+  if(!loopPlaying)return;
+  loopFrame=(loopFrame+1)%LOOP_FRAMES;
+  renderLoopFrame(loopFrame);
+  const spd=parseInt(document.getElementById('loop-speed').value);
+  loopTimer=setTimeout(playLoopTick,spd);
+}
+function setLoopProduct(btn){
+  document.querySelectorAll('.loop-pill').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+  loopProduct=btn.dataset.lp; renderLoopFrame(loopFrame);
+}
+// activate loop layer when switching to Loop tab
+const origSwitchTab=switchTab;
+function switchTab(name,btn){
+  origSwitchTab(name,btn);
+  if(name==='radar'){
+    // pause live radar, show loop
+    if(radarLayer){map.removeLayer(radarLayer);}
+    renderLoopFrame(loopFrame);
+    document.getElementById('wx-hint').style.display='none';
+  } else {
+    // restore live radar, remove loop
+    if(loopPlaying)toggleLoopPlay();
+    if(loopLayer){map.removeLayer(loopLayer);loopLayer=null;}
+    if(radarOn&&!radarLayer){radarLayer=buildRadarLayer(currentProduct);radarLayer.addTo(map);}
+    if(name==='alerts') document.getElementById('wx-hint').style.display='block';
+    else document.getElementById('wx-hint').style.display='none';
+  }
+}
+
+// ══ STORM REPORTS (IEM LSR) ══
+let stormMarkers=[];
+async function loadStormReports(){
+  const btn=document.getElementById('storm-load-btn');
+  btn.textContent='Loading...'; btn.disabled=true;
+  stormMarkers.forEach(m=>map.removeLayer(m)); stormMarkers=[];
+  document.getElementById('storm-list').innerHTML='';
+  const hrs=document.getElementById('storm-hours').value;
+  const end=new Date(), start=new Date(end-hrs*3600000);
+  const fmt=d=>`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}T${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}:00`;
+  const url=`https://mesonet.agron.iastate.edu/geojson/lsr.php?sts=${encodeURIComponent(fmt(start))}&ets=${encodeURIComponent(fmt(end))}&wfo=ALL`;
+  try {
+    const r=await fetch(url); const data=await r.json();
+    const features=data.features||[];
+    if(!features.length){document.getElementById('storm-list').innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:11px;letter-spacing:1px;text-transform:uppercase;">No reports found</div>';btn.textContent='Load Reports';btn.disabled=false;return;}
+    features.slice(0,150).forEach(f=>{
+      const p=f.properties, coords=f.geometry.coordinates;
+      const lat=coords[1], lng=coords[0];
+      const icon=L.divIcon({className:'',html:`<div style="width:10px;height:10px;background:#ff6b00;border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px #ff6b00"></div>`,iconSize:[10,10],iconAnchor:[5,5]});
+      const m=L.marker([lat,lng],{icon}).addTo(map);
+      m.bindPopup(`<div class="popup-type" style="color:#ff6b00">${escHtml(p.typetext||p.type)}</div><div class="popup-title">${escHtml(p.city||'Unknown')}, ${escHtml(p.st||'')}</div><div class="popup-desc">${escHtml(p.remark||'')}</div><div class="popup-meta">${escHtml(p.valid||'')}</div>`);
+      stormMarkers.push(m);
+      const card=document.createElement('div'); card.className='storm-card';
+      card.innerHTML=`<div class="s-type">${escHtml(p.typetext||p.type||'Report')}</div><div class="s-loc">${escHtml(p.city||'Unknown')}, ${escHtml(p.st||'')}</div><div class="s-meta">${escHtml(p.valid||'')} · ${p.magnitude?p.magnitude+' '+p.units:''}</div>`;
+      card.addEventListener('click',()=>{map.setView([lat,lng],10);m.openPopup();});
+      document.getElementById('storm-list').appendChild(card);
+    });
+    if(features.length>150){const d=document.createElement('div');d.style.cssText='text-align:center;padding:8px;color:var(--muted);font-size:10px;font-family:var(--font-mono)';d.textContent=`+${features.length-150} more reports`;document.getElementById('storm-list').appendChild(d);}
+  } catch(e){document.getElementById('storm-list').innerHTML='<div style="text-align:center;padding:20px;color:#ff4444;font-size:11px;">Failed to load reports</div>';}
+  btn.textContent='Load Reports'; btn.disabled=false;
+}
+
+// ══ POLYGON HISTORY ══
+let historyPolyLayers=[];
+async function loadHistory(){
+  const btn=document.getElementById('history-load-btn');
+  btn.textContent='Loading...'; btn.disabled=true;
+  historyPolyLayers.forEach(l=>map.removeLayer(l)); historyPolyLayers=[];
+  document.getElementById('history-list').innerHTML='';
+  try {
+    const rows=await sbFetch('/plws_polygons?order=created_at.desc&limit=100');
+    if(!rows.length){document.getElementById('history-list').innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:11px;letter-spacing:1px;text-transform:uppercase;">No history found</div>';btn.textContent='Refresh';btn.disabled=false;return;}
+    rows.forEach(row=>{
+      const color=TYPE_COLORS[row.type]||'#fff';
+      const timeStr=new Date(row.created_at).toUTCString().replace(' GMT','')+' UTC';
+      const poly=L.polygon(row.points,{color,fillColor:color,fillOpacity:.1,weight:1.5,dashArray:'4,3'}).addTo(map);
+      poly.bindPopup(`<div class="popup-type" style="color:${color}">${TYPE_LABELS[row.type]||row.type}</div><div class="popup-title">${escHtml(row.title)}</div>${row.description?`<div class="popup-desc">${escHtml(row.description)}</div>`:''}<div class="popup-meta">${timeStr}</div>`);
+      historyPolyLayers.push(poly);
+      const card=document.createElement('div'); card.className=`hist-card ${row.type}`;
+      card.innerHTML=`<div class="h-type">${TYPE_LABELS[row.type]||row.type}</div><div class="h-title">${escHtml(row.title)}</div><div class="h-meta">${timeStr}</div><div class="h-pts">${row.points.length} vertices</div>`;
+      card.addEventListener('click',()=>{map.fitBounds(poly.getBounds(),{padding:[40,40]});poly.openPopup();});
+      document.getElementById('history-list').appendChild(card);
+    });
+  } catch(e){document.getElementById('history-list').innerHTML='<div style="text-align:center;padding:20px;color:#ff4444;font-size:11px;">Failed to load</div>';}
+  btn.textContent='Refresh'; btn.disabled=false;
+}
+
+// ══ WEATHER DATA (click map) ══
+let wxChart=null;
+document.getElementById('wx-hint').style.display='block';
+map.on('click', async e => {
+  if(drawingMode)return;
+  const {lat,lng}=e.latlng;
+  const popup=document.getElementById('wx-popup');
+  popup.classList.add('visible');
+  document.getElementById('wx-loading').style.display='block';
+  document.getElementById('wx-current').style.display='none';
+  document.getElementById('wx-chart-wrap').style.display='none';
+  document.getElementById('wx-coords').textContent=`${lat.toFixed(4)}°N, ${Math.abs(lng).toFixed(4)}°${lng<0?'W':'E'}`;
+  if(wxChart){wxChart.destroy();wxChart=null;}
+  try {
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=temperature_2m,windspeed_10m,precipitation&past_days=7&forecast_days=1&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=UTC`;
+    const data=await(await fetch(url)).json();
+    const h=data.hourly;
+    const now=new Date();
+    // find current hour index
+    const idx=h.time.findIndex(t=>new Date(t+'Z')>=now)-1;
+    const ci=Math.max(0,Math.min(idx,h.time.length-1));
+    document.getElementById('wx-loading').style.display='none';
+    document.getElementById('wx-current').style.display='flex';
+    document.getElementById('wx-current').innerHTML=`
+      <div class="wx-stat"><div class="val">${Math.round(h.temperature_2m[ci])}°F</div><div class="lbl">Temp</div></div>
+      <div class="wx-stat"><div class="val">${Math.round(h.windspeed_10m[ci])}</div><div class="lbl">mph Wind</div></div>
+      <div class="wx-stat"><div class="val">${h.precipitation[ci].toFixed(2)}"</div><div class="lbl">Precip</div></div>
+    `;
+    // chart: last 48h of temp
+    const slice48=h.time.slice(Math.max(0,ci-47),ci+1);
+    const temps48=h.temperature_2m.slice(Math.max(0,ci-47),ci+1);
+    const precip48=h.precipitation.slice(Math.max(0,ci-47),ci+1);
+    document.getElementById('wx-chart-wrap').style.display='block';
+    const ctx=document.getElementById('wx-chart').getContext('2d');
+    wxChart=new Chart(ctx,{
+      type:'line',
+      data:{
+        labels:slice48.map(t=>t.slice(11,16)),
+        datasets:[
+          {label:'Temp °F',data:temps48,borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,.08)',borderWidth:1.5,pointRadius:0,yAxisID:'y'},
+          {label:'Precip"',data:precip48,borderColor:'#4a9eff',backgroundColor:'rgba(74,158,255,.2)',borderWidth:1,pointRadius:0,type:'bar',yAxisID:'y2'}
+        ]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,animation:false,
+        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,bodyFont:{family:'JetBrains Mono'},titleFont:{family:'JetBrains Mono'},callbacks:{title:i=>i[0].label+'Z'}}},
+        scales:{
+          x:{ticks:{color:'#6a7a95',font:{family:'JetBrains Mono',size:9},maxTicksLimit:8},grid:{color:'#1e2535'}},
+          y:{ticks:{color:'#00d4ff',font:{family:'JetBrains Mono',size:9}},grid:{color:'#1e2535'},position:'left'},
+          y2:{ticks:{color:'#4a9eff',font:{family:'JetBrains Mono',size:9}},grid:{display:false},position:'right'}
+        }
+      }
+    });
+  } catch(err){document.getElementById('wx-loading').textContent='Failed to load weather data.';}
+});
+function closeWxPopup(){document.getElementById('wx-popup').classList.remove('visible');if(wxChart){wxChart.destroy();wxChart=null;}}
+
+// ══ LOCATION TRACKING ══
+let gpsActive = false, gpsWatchId = null, gpsInterval = null;
+let userLatLng = null, locDotLeaflet = null;
+let warnDismissed = false, lastWarnId = null;
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playWarningTone(type) {
+  // Different tones per type
+  const tones = {
+    tornado: [{ f:1050,t:.12 },{ f:0,t:.05 },{ f:1050,t:.12 },{ f:0,t:.05 },{ f:1050,t:.12 },{ f:0,t:.05 },{ f:880,t:.4 }],
+    tstorm:  [{ f:880,t:.18 },{ f:0,t:.06 },{ f:880,t:.18 },{ f:0,t:.06 },{ f:660,t:.35 }],
+    flood:   [{ f:660,t:.25 },{ f:0,t:.08 },{ f:660,t:.25 },{ f:0,t:.08 },{ f:550,t:.3 }],
+    custom:  [{ f:750,t:.2  },{ f:0,t:.07 },{ f:750,t:.2  },{ f:0,t:.07 },{ f:600,t:.3 }],
+  };
+  const seq = tones[type] || tones.custom;
+  let t = audioCtx.currentTime + 0.05;
+  seq.forEach(({ f, t: dur }) => {
+    if (f === 0) { t += dur; return; }
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = type === 'tornado' ? 'sawtooth' : 'square';
+    osc.frequency.setValueAtTime(f, t);
+    gain.gain.setValueAtTime(0.35, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t); osc.stop(t + dur);
+    t += dur;
+  });
+}
+
+// Ray-casting point-in-polygon
+function pointInPolygon(lat, lng, points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const [yi, xi] = points[i], [yj, xj] = points[j];
+    if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function checkUserInPolygons(lat, lng) {
+  for (const alert of alerts) {
+    if (pointInPolygon(lat, lng, alert.points)) {
+      return alert;
+    }
+  }
+  return null;
+}
+
+function showWarningBanner(alert) {
+  if (warnDismissed && lastWarnId === alert.id) return;
+  if (lastWarnId === alert.id) return; // already showing
+  lastWarnId = alert.id;
+  warnDismissed = false;
+  const banner = document.getElementById('warn-banner');
+  banner.className = `${alert.type}`;
+  banner.id = 'warn-banner';
+  banner.style.display = 'flex';
+  document.getElementById('warn-text').textContent =
+    `⚠ YOU ARE IN A ${(TYPE_LABELS[alert.type]||'Warning').toUpperCase()} AREA — ${alert.title}`;
+  document.getElementById('gps-dot').className = 'warn';
+  // shift map down to accommodate banner
+  document.getElementById('map').style.top = '86px';
+  playWarningTone(alert.type);
+}
+
+function hideWarningBanner() {
+  document.getElementById('warn-banner').style.display = 'none';
+  document.getElementById('map').style.top = '48px';
+  document.getElementById('gps-dot').className = gpsActive ? 'active' : '';
+  lastWarnId = null;
+}
+
+function dismissWarning() {
+  warnDismissed = true;
+  hideWarningBanner();
+}
+
+function updateLocationDot(lat, lng) {
+  // Use Leaflet to convert latlng to pixel position
+  const pt = map.latLngToContainerPoint([lat, lng]);
+  const wrap = document.getElementById('loc-dot-wrap');
+  wrap.style.display = 'block';
+  wrap.style.left = pt.x + 'px';
+  wrap.style.top  = (pt.y + 48) + 'px'; // offset for topbar
+}
+
+map.on('move zoom', () => {
+  if (userLatLng) updateLocationDot(userLatLng[0], userLatLng[1]);
+});
+
+function onGPSPosition(pos) {
+  const lat = pos.coords.latitude, lng = pos.coords.longitude;
+  userLatLng = [lat, lng];
+  document.getElementById('gps-label').textContent = `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+  document.getElementById('gps-dot').className = 'active';
+  updateLocationDot(lat, lng);
+  // Check polygon intersection
+  const hit = checkUserInPolygons(lat, lng);
+  if (hit) {
+    showWarningBanner(hit);
+  } else {
+    if (lastWarnId !== null) hideWarningBanner();
+    warnDismissed = false;
+  }
+}
+
+function onGPSError(err) {
+  document.getElementById('gps-label').textContent = 'GPS Error';
+  document.getElementById('gps-dot').className = '';
+}
+
+function startGPS() {
+  if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
+  // Immediate fix
+  navigator.geolocation.getCurrentPosition(pos => {
+    onGPSPosition(pos);
+    map.setView([pos.coords.latitude, pos.coords.longitude], 10);
+  }, onGPSError, { enableHighAccuracy: true });
+  // Update every 5 seconds
+  gpsInterval = setInterval(() => {
+    navigator.geolocation.getCurrentPosition(onGPSPosition, onGPSError, { enableHighAccuracy: true, maximumAge: 4000, timeout: 5000 });
+  }, 5000);
+  document.getElementById('gps-label').textContent = 'Locating...';
+  document.getElementById('gps-btn').textContent = 'Stop';
+  document.getElementById('gps-btn').style.borderColor = '#44ff88';
+  document.getElementById('gps-btn').style.color = '#44ff88';
+}
+
+function stopGPS() {
+  if (gpsInterval) { clearInterval(gpsInterval); gpsInterval = null; }
+  if (gpsWatchId)  { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+  userLatLng = null;
+  document.getElementById('loc-dot-wrap').style.display = 'none';
+  document.getElementById('gps-label').textContent = 'GPS Off';
+  document.getElementById('gps-dot').className = '';
+  document.getElementById('gps-btn').textContent = 'Track';
+  document.getElementById('gps-btn').style.borderColor = '';
+  document.getElementById('gps-btn').style.color = '';
+  hideWarningBanner(); lastWarnId = null; warnDismissed = false;
+}
+
+function toggleGPS() {
+  // Resume AudioContext on user gesture
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  gpsActive = !gpsActive;
+  if (gpsActive) startGPS(); else stopGPS();
+}
+
+// ══ BOOT ══
+loadPolygons();
+</script>
+</body>
+</html>
